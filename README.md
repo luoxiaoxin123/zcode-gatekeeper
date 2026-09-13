@@ -120,6 +120,7 @@ node ~/.zcode/gatekeeper/gatekeeper.mjs approve --last   # 或直接批准最近
   "extraBody": {},          // 深合并进 LLM 请求体的自定义字段（见下）
   "daemon": true,           // 守护进程模式（false = 每次内联运行）
   "daemonPort": 47811,
+  "daemonIdleMs": 1800000,  // daemon 空闲自动退出（30 分钟无调用释放内存，0 = 常驻）
   "toolAllowlist": [],      // 追加免审工具名
   "autoMode": {             // 自定义规则（非空段整体替换 policy.md 中对应默认段）
     "allow": [],            //   应自动放行的动作
