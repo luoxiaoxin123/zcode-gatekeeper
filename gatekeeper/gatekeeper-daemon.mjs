@@ -73,7 +73,9 @@ const server = net.createServer({ allowHalfOpen: true }, (socket) => {
   socket.setTimeout(42_000, () => socket.destroy());          // 兜底：不允许超过 hook 超时
 
   const dispatch = async (line) => {
-    let res = { exitCode: 0, stdout: '', stderr: '' };
+    // 协议异常/未知 op 一律返回 {ok:false}（无 exitCode 字段）——客户端据此降级内联做完整审查，
+    // 绝不能返回 {exitCode:0}（会被当作"明确放行"决策，形成 fail-open）。
+    let res = { ok: false, error: 'unknown op' };
     try {
       const req = line.trim() ? JSON.parse(line.trim()) : null;
       if (!req || req.op === 'ping') {
@@ -85,7 +87,7 @@ const server = net.createServer({ allowHalfOpen: true }, (socket) => {
         res = await handleHook(req);
       }
     } catch (e) {
-      res = { exitCode: 0, stdout: '', stderr: '' };           // 协议异常不放行也不拦截，交回内联/原生流程
+      res = { ok: false, error: 'request error: ' + (e?.message || e) };
       log('request error: ' + (e?.message || e));
     }
     socket.write(JSON.stringify(res) + '\n', () => { try { socket.end(); } catch { /* 忽略 */ } });
@@ -127,6 +129,7 @@ server.listen(PORT, '127.0.0.1', () => {
         body: JSON.stringify({ model: all.config.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
         signal: AbortSignal.timeout(10_000),
       });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       await res.json().catch(() => {});
       llmWarm = true;
       log('llm connection warmed in ' + (Date.now() - t0) + 'ms');
@@ -144,7 +147,14 @@ async function ping(port, timeoutMs) {
     s.setEncoding('utf8');
     const to = setTimeout(() => { s.destroy(); reject(new Error('timeout')); }, timeoutMs);
     s.on('connect', () => s.write(JSON.stringify({ op: 'ping' }) + '\n'));
-    s.on('data', (c) => { buf += c; if (buf.includes('\n')) { clearTimeout(to); resolve(JSON.parse(buf)); s.end(); } });
+    s.on('data', (c) => {
+      buf += c;
+      if (buf.includes('\n')) {
+        clearTimeout(to);
+        try { resolve(JSON.parse(buf)); } catch { resolve(null); }
+        s.end();
+      }
+    });
     s.on('error', (e) => { clearTimeout(to); reject(e); });
   });
 }

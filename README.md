@@ -188,7 +188,7 @@ GATEKEEPER_DEBUG=1 node gatekeeper.mjs …         # 打印代理通道调试信
 bash test.sh
 ```
 
-覆盖 29 项决策路径：白名单/黑名单拦截、双 shell 兼容、三种 onUncertain 落地、extraBody 注入、approve 一次性放行与用后即焚、daemon 通道冒烟、fail-closed 降级等。
+覆盖 41 项决策路径：白名单/黑名单拦截、双 shell 兼容、三种 onUncertain 落地、extraBody 注入、approve 一次性放行与用后即焚、daemon 通道冒烟、fail-closed 降级等。
 
 ## 卸载
 

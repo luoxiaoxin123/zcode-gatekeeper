@@ -9,10 +9,10 @@
 \brm\b(?=[^;&|\n]*\s-[a-zA-Z]*[rR])(?=[^;&|\n]*\s(/|~|\$HOME)(\s|$))
 
 # PowerShell 递归删除：盘根、系统目录、用户主目录（盘内普通子目录不算）
-Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s"?[a-zA-Z]:[\\/]?"?\s*$
+Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s"?[a-zA-Z]:[\\/]?\*?"?\s*$
 Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s"?[a-zA-Z]:\\(Windows|Users|Program Files)
 Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s(~|\$HOME|%USERPROFILE%|\$env:USERPROFILE)(\s|$)
-(rd|rmdir|del)\s+/s[^;&|\n]*[a-zA-Z]:\\(\s|$|Windows|Users|Program)
+(rd|rmdir|del)\b[^;&|\n]*\/s\b[^;&|\n]*[a-zA-Z]:\\((\*|\\)?(\s|$)|Windows|Users|Program)
 del\s+/[a-z]*q[a-z]*\s+/[a-z]*s[a-z]*\s+"?[a-zA-Z]:[\\/]?"?\s*$
 
 # 磁盘 / 文件系统级破坏
@@ -22,7 +22,8 @@ shred\s+[^;&|\n]*/dev/
 blkdiscard
 wipefs\s+[^;&|\n]*/dev/
 \bdiskpart\b[\s\S]*\bclean\b
-\bformat\s+[a-zA-Z]:
+\bformat(\.com)?\s+[a-zA-Z]:
+\bFormat-Volume\b
 Clear-Disk
 Initialize-Disk
 Remove-Partition

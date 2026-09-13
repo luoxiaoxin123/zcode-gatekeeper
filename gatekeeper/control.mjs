@@ -77,6 +77,12 @@ async function cmdInstall() {
   }
   out(`✓ 已复制 ${copied} 个文件 → ${TARGET_DIR}`);
 
+  // 首次安装没有 config.json（仓库不含真实密钥）→ 从模板生成
+  if (!existsSync(path.join(TARGET_DIR, 'config.json'))) {
+    cpSync(path.join(SCRIPT_DIR, 'config.example.json'), path.join(TARGET_DIR, 'config.json'));
+    out('✓ 已从模板生成 config.json —— 请编辑填入你的审查端点（baseUrl/apiKey/model）');
+  }
+
   if (!existsSync(USER_CONFIG)) {
     out(`✗ 未找到用户配置 ${USER_CONFIG} —— 请确认 ZCode 已安装过并至少启动过一次`);
     return 1;

@@ -54,7 +54,7 @@ const DEFAULTS = {
   baseUrl: 'https://grok.002256.xyz/v1',
   apiKey: '',
   model: 'grok-chat-fast',
-  llmTimeoutMs: 20000,
+  llmTimeoutMs: 12000,
   retries: 1,
   maxOutputTokens: 2000,     // 推理模型需要 headroom，否则 JSON 被截断（参照 CC 给思考模型留 2048）
   onReviewerError: 'deny',   // deny | ask | allow —— 审查器故障时（CC 同款 fail-closed 默认 deny）
@@ -91,6 +91,12 @@ export function loadAll() {
   if (process.env.GATEKEEPER_ON_UNCERTAIN) {
     config.onUncertain = String(process.env.GATEKEEPER_ON_UNCERTAIN).toLowerCase();
   }
+  // 超时预算钳制：LLM 最坏耗时（超时×(重试+1)）+ 5s 余量不得超过 35s，
+  // 否则内联降级会撞上 hook 超时（PreToolUse 50s / PermissionRequest 45s）被掐成无决策。
+  const worst = (config.llmTimeoutMs | 0) * ((config.retries | 0) + 1);
+  if (worst > 35000) {
+    config.llmTimeoutMs = Math.max(3000, Math.floor(35000 / ((config.retries | 0) + 1)));
+  }
   const POLICY = (() => {
     try { return readFileSync(path.join(SCRIPT_DIR, 'policy.md'), 'utf8'); }
     catch { return '你是安全审查员，判断工具调用是否在当前任务授权范围内且安全。'; }
@@ -119,7 +125,10 @@ export function buildSets(config) {
   };
 }
 
-const COMPOUND = /&&|\|\||;|`|\$\(|\|/;  // 复合命令不享受命令白名单，交给审查层
+// 复合命令不享受命令白名单，交给审查层。
+// 覆盖：&（含单个&与&&）、|、;、反引号、$、换行/回车（多行命令）、> >> <（重定向可写文件/投毒状态文件）。
+// 任何包含这些字符的命令一律不进白名单，宁可达灰区也不静默放行。
+const COMPOUND = /[&|;`$\n\r><]/;
 function isBashAllowed(cmd, ALLOW_RE) {
   if (COMPOUND.test(cmd)) return false;
   return ALLOW_RE.some(re => re.test(cmd));
@@ -342,7 +351,8 @@ function saveApproved(list) {
 export function approvedConsume(cmd) {
   const list = loadApproved();
   const now = Date.now();
-  const idx = list.findIndex(e => e && e.cmd === cmd && now - (e.ts || 0) <= APPROVE_TTL);
+  // ts 必须在过去（防未来时间戳投毒使批准永不过期）且在 TTL 内
+  const idx = list.findIndex(e => e && e.cmd === cmd && (e.ts || 0) <= now && now - (e.ts || 0) <= APPROVE_TTL);
   if (idx < 0) return false;
   list.splice(idx, 1);
   saveApproved(list);
@@ -369,7 +379,7 @@ function recordDenial(tool, cmd) {
   if (!cmd) return;
   try {
     const list = loadJson(DENIED_FILE, []);
-    list.push({ tool, cmd: String(cmd).slice(0, 2000), ts: Date.now() });
+    list.push({ tool, cmd: String(cmd).slice(0, 8000), ts: Date.now() });
     writeFileSync(DENIED_FILE, JSON.stringify(list.slice(-20)));
   } catch { /* 忽略 */ }
 }
@@ -495,6 +505,22 @@ export async function decide({ mode, payload }, deps, all) {
     }
   }
 
+  // 第 0.7 层：确定性硬拒 —— 状态文件读写与自批命令。
+  // 防两条攻击链：① 白名单放行的 `echo … > approved.json` 投毒批准列表（绕过灾难黑名单）；
+  //              ② 模型代跑 `gatekeeper.mjs approve … --yes` 自我放行。
+  // 这类命令只能由用户在终端执行（终端不走 hook，不受本规则影响）。
+  const stateFileHit = /approved\.json|denied\.json|cache\.json|audit\.jsonl|daemon\.log/i.test(
+    cmd + ' ' + String(toolInput.file_path ?? toolInput.path ?? ''));
+  if (stateFileHit) {
+    return deny('该命令试图读写 gatekeeper 的状态文件（批准列表/审计/缓存/日志）。' +
+      '这些文件只能由 gatekeeper 自身或用户在终端管理；如需查看审计，请在你的终端运行 tail 命令。',
+      rec('deny', 'state-file'));
+  }
+  if (/gatekeeper(\.mjs)?["']?\s+(approve|--last)|control\.mjs["']?\s+approve/i.test(cmd)) {
+    return deny('检测到试图运行 gatekeeper 的 approve 自批命令。' +
+      'approve 只能由用户亲自在终端执行（模型不得代跑，防自我放行）。', rec('deny', 'self-approve'));
+  }
+
   // 第 0.8 层：用户一次性批准（deny 逃生舱）—— 精确匹配原命令，命中即消费放行
   if (cmd && approvedConsume(cmd)) {
     return allow('用户已一次性批准该命令（批准已消费）', rec('allow', 'approved'));
@@ -528,17 +554,13 @@ export async function decide({ mode, payload }, deps, all) {
   // 第 3 层：审查模型（任务感知判定，CC 同款二值判定）
   const reviewerFail = (msg, r) => {
     if (config.onReviewerError === 'allow') return allow('审查器故障放行：' + msg, rec('allow', 'error', 0, msg));
-    if (config.onReviewerError === 'ask') return ask(rec('ask', 'error', 0, msg));
+    if (config.onReviewerError === 'ask' || config.onReviewerError === 'prompt') return ask(rec('ask', 'error', 0, msg));
     return deny(
       '审查器不可用，为安全起见拒绝执行本次调用（' + msg + '）。' +
       '请检查 gatekeeper/config.json 的审查端点配置，或将 onReviewerError 临时改为 "ask"。',
       r || rec('deny', 'error', 0, msg)
     );
   };
-
-  if (!config.apiKey || config.apiKey === 'PENDING') {
-    return reviewerFail('未配置审查端点 apiKey');
-  }
 
   const task = deps.loadTaskContext(sid);
   const { actions } = deps.loadState(sid);
@@ -550,6 +572,11 @@ export async function decide({ mode, payload }, deps, all) {
     if (hit.decision === 'deny') return deny(blockReason(hit.reason) + '（缓存）', rec('deny', 'llm-cache', 0, hit.reason));
     if (hit.decision === 'ask') return uncertain(hit.reason, 0, 'llm-cache');
     return ask(rec('ask', 'llm-cache', 0, hit.reason));
+  }
+
+  // apiKey 校验放在缓存之后：缓存命中不需要审查端点
+  if (!config.apiKey || config.apiKey === 'PENDING') {
+    return reviewerFail('未配置审查端点 apiKey');
   }
 
   const t0 = Date.now();

@@ -19,7 +19,6 @@
 ^\s*cat\s
 ^\s*head\s
 ^\s*tail\s
-^\s*find\s
 ^\s*grep\s
 ^\s*rg\s
 ^\s*wc\s

@@ -138,6 +138,32 @@ check "approve --last → 放行并消费" 0 "$RC" "" "$OUT"
 run hard '{"hook_event_name":"PreToolUse","session_id":"l1","tool_name":"Bash","tool_input":{"command":"rm -rf ~"},"cwd":"C:/x"}'
 check "消费后再执行仍拦截" 2 "$RC" "" "$OUT"
 
+# ---------- 安全修复回归：复合命令缺口 / 状态文件投毒 / 自批 / dangerlist 变体 ----------
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f1","tool_name":"Bash","tool_input":{"command":"echo hi\nrm -rf ~/important"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 GATEKEEPER_BASE_URL="http://127.0.0.1:9" $GK review --layer=full 2>&1); RC=$?
+check "换行拼接 → 不再进白名单（灰区→fail-closed）" 2 "$RC" "审查器不可用" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f1","tool_name":"Bash","tool_input":{"command":"echo hi & rm -rf ~/important"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 GATEKEEPER_BASE_URL="http://127.0.0.1:9" $GK review --layer=full 2>&1); RC=$?
+check "单个 & 拼接 → 不再进白名单" 2 "$RC" "审查器不可用" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f1","tool_name":"Bash","tool_input":{"command":"echo hacked > /tmp/pwned.txt"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 GATEKEEPER_BASE_URL="http://127.0.0.1:9" $GK review --layer=full 2>&1); RC=$?
+check "重定向 → 不再进白名单" 2 "$RC" "审查器不可用" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f1","tool_name":"Bash","tool_input":{"command":"find / -delete"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 GATEKEEPER_BASE_URL="http://127.0.0.1:9" $GK review --layer=full 2>&1); RC=$?
+check "find / -delete → 移出白名单（灰区）" 2 "$RC" "审查器不可用" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PreToolUse","session_id":"f2","tool_name":"Bash","tool_input":{"command":"echo x > approved.json"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 $GK review --layer=hard 2>&1); RC=$?
+check "状态文件写入 → 确定性拒绝" 2 "$RC" "状态文件" "$OUT"
+run hard '{"hook_event_name":"PreToolUse","session_id":"f2","tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"C:/x"}'
+check "投毒失败后 rm -rf / 仍被黑名单拦截" 2 "$RC" "灾难命令黑名单" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PreToolUse","session_id":"f3","tool_name":"Bash","tool_input":{"command":"node gatekeeper.mjs approve \"rm -rf /\" --yes"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 $GK review --layer=hard 2>&1); RC=$?
+check "模型自批 approve → 确定性拒绝" 2 "$RC" "自批" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f4","tool_name":"Bash","tool_input":{"command":"del /f /s /q C:\\"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 $GK review --layer=hard 2>&1); RC=$?
+check "del /f /s /q C:\\ → 拦截（flag 顺序无关）" 2 "$RC" "灾难命令黑名单" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PreToolUse","session_id":"f4","tool_name":"Bash","tool_input":{"command":"Remove-Item -Recurse -Force C:\\*"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 $GK review --layer=hard 2>&1); RC=$?
+check "Remove-Item C:\\* → 拦截" 2 "$RC" "灾难命令黑名单" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PreToolUse","session_id":"f4","tool_name":"Bash","tool_input":{"command":"Format-Volume -DriveLetter C"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 $GK review --layer=hard 2>&1); RC=$?
+check "Format-Volume → 拦截" 2 "$RC" "灾难命令黑名单" "$OUT"
+OUT=$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"f5","tool_name":"Bash","tool_input":{"command":"del /s /q C:/x/project/build"},"cwd":"C:/x"}' | GATEKEEPER_NO_DAEMON=1 GATEKEEPER_BASE_URL="http://127.0.0.1:9" $GK review --layer=full 2>&1); RC=$?
+check "负例：项目子目录 del /s → 灰区（不误拦）" 2 "$RC" "审查器不可用" "$OUT"
+run hard '{"hook_event_name":"PreToolUse","session_id":"f6","tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"C:/x"}'
+check "白名单健康：git status 仍直通" 0 "$RC" "" "$OUT"
+
 echo "=============================="
 echo "PASS=$pass FAIL=$fail"
 exit $fail

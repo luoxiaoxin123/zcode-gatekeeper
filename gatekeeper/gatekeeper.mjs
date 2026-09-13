@@ -108,8 +108,10 @@ async function proxyOrStartDaemon(port, mode, payload) {
   return tryProxy(port, { op: 'hook', mode, payload, sigs: sigs(), env: { fullAccessGuard: ['1', 'true', 'yes', 'on'].includes(String(process.env.GATEKEEPER_FULL_ACCESS_GUARD || '').toLowerCase()) ? true : undefined } }, 42_000);
 }
 
+const HOOK_MODE = process.argv[2] || '';
+
 async function main() {
-  const mode = process.argv[2] || '';
+  const mode = HOOK_MODE;
 
   // ---- 管理命令（不读 stdin，即秒响应）----
   if (['install', 'uninstall', 'enable', 'disable', 'status', 'approve', 'shutdown-daemon'].includes(mode)) {
@@ -122,6 +124,12 @@ async function main() {
   const raw = await readStdin();
   let payload = null;
   try { payload = JSON.parse(raw); } catch { payload = null; }
+
+  // review 模式下输入必须可解析（fail-closed）：schema 漂移/截断时宁可拒绝也不放行
+  if (mode === 'review' && payload == null) {
+    exitWith(2, '', '【Auto 审批员·拒绝】hook 输入不是有效 JSON，安全起见拒绝执行（fail-closed）。\n');
+    return;
+  }
 
   const cfg = loadJsonFile(path.join(SCRIPT_DIR, 'config.json'), {});
   const daemonEnabled = cfg.daemon !== false && !process.env.GATEKEEPER_NO_DAEMON;
@@ -142,9 +150,11 @@ async function main() {
 }
 
 main().catch(e => {
+  // review 模式下基础设施崩溃按"拒绝"处理（fail-closed）；其余模式按普通错误
+  const code = HOOK_MODE === 'review' ? 2 : 1;
   process.stderr.write('【Auto 审批员·异常】' + (e?.message || String(e)) + '\n');
   try { process.stdin.destroy(); } catch { /* 忽略 */ }
-  process.exitCode = 1;
-  const t = setTimeout(() => { try { process.exit(1); } catch { /* 忽略 */ } }, 250);
+  process.exitCode = code;
+  const t = setTimeout(() => { try { process.exit(code); } catch { /* 忽略 */ } }, 250);
   if (typeof t.unref === 'function') t.unref();
 });
