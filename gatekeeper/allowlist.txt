@@ -1,0 +1,71 @@
+# 只读/无副作用命令白名单：命中即放行，不调用审查模型（正则，不区分大小写）
+# 注意：脚本会自动排除复合命令（含 && || ; | $( 反引号），此处无需处理 ——
+#       因此 PowerShell 管道（Get-Xxx | Select ...）一律落入灰区交 LLM，
+#       这是刻意的：PS 管道尾段可能是 rm/ri（Remove-Item 的别名）等危险别名。
+# ---------------------------------------------------------------
+# —— Bash / 通用 ——
+^\s*echo\s
+^\s*pwd\s*$
+^\s*whoami\s*$
+^\s*hostname\s*$
+^\s*id\b
+^\s*uname\s
+^\s*date\s*$
+^\s*uptime\s*$
+^\s*free\s
+^\s*who\b
+^\s*ls(\s|$)
+^\s*dir(\s|$)
+^\s*cat\s
+^\s*head\s
+^\s*tail\s
+^\s*find\s
+^\s*grep\s
+^\s*rg\s
+^\s*wc\s
+^\s*stat\s
+^\s*file\s
+^\s*du\s
+^\s*df(\s|$)
+^\s*tree(\s|$)
+^\s*which\s
+^\s*where(\s|$)
+^\s*whereis\s
+^\s*type\s
+^\s*realpath\s
+^\s*basename\s
+^\s*dirname\s
+^\s*readlink\s
+^\s*lscpu\s*$
+^\s*lsblk\s*$
+^\s*printenv\b
+^\s*env\s*$
+^\s*node\s+(-v|--version)\s*$
+^\s*npm\s+(-v|--version)\s*$
+^\s*python\s+(-V|--version)\s*$
+^\s*git\s+(status|log|diff|show|branch|rev-parse|remote\s+-v|config\s+--get)\b
+^\s*npm\s+(ls|list|view)\b
+# —— PowerShell（只读 cmdlet）——
+^\s*Get-Location\s*$
+^\s*Get-Content\s
+^\s*Get-ChildItem\b
+^\s*Get-Item\b
+^\s*Get-ItemProperty\b
+^\s*Get-Command\b
+^\s*Get-Help\b
+^\s*Get-Member\b
+^\s*Get-Variable\b
+^\s*Get-PSDrive\b
+^\s*Get-Service\b
+^\s*Get-Process\b
+^\s*Get-Volume\b
+^\s*Get-Module\b
+^\s*Get-Date\s*$
+^\s*Test-Path\s
+^\s*Select-String\s
+^\s*Measure-Object\b
+^\s*Write-Output\s
+^\s*Write-Host\s
+# —— cmd / 跨平台 ——
+^\s*tasklist\b
+^\s*ps\b

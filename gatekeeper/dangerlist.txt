@@ -1,0 +1,39 @@
+# 灾难命令黑名单：命中即确定性拒绝（不经过审查模型）。正则，不区分大小写。
+# 原则：只收录"无争议的大规模不可逆破坏"，宁缺毋滥 —— 误报无法被 LLM 纠回。
+# ---------------------------------------------------------------------------
+
+# rm 带递归(r/R)且带强制(f)，目标是根目录本身/家目录本身/盘根/系统目录
+# （注意：~/projects、/tmp/build 这类子目录不算，留给 LLM 审查）
+\brm\b(?=[^;&|\n]*\s-[a-zA-Z]*[rR][a-zA-Z]*f)(?=[^;&|\n]*\s(/(\s|$|\*)|~(\s|$|/\*)|\$HOME|%USERPROFILE%|[a-zA-Z]:[\\/]{0,2}(\s|$|\*|Windows|Users|Program)))
+\brm\b(?=[^;&|\n]*\s-[a-zA-Z]*f[a-zA-Z]*[rR])(?=[^;&|\n]*\s(/(\s|$|\*)|~(\s|$|/\*)|\$HOME|%USERPROFILE%|[a-zA-Z]:[\\/]{0,2}(\s|$|\*|Windows|Users|Program)))
+\brm\b(?=[^;&|\n]*\s-[a-zA-Z]*[rR])(?=[^;&|\n]*\s(/|~|\$HOME)(\s|$))
+
+# PowerShell 递归删除：盘根、系统目录、用户主目录（盘内普通子目录不算）
+Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s"?[a-zA-Z]:[\\/]?"?\s*$
+Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s"?[a-zA-Z]:\\(Windows|Users|Program Files)
+Remove-Item\s+[^;&|\n]*-Recurse[^;&|\n]*\s(~|\$HOME|%USERPROFILE%|\$env:USERPROFILE)(\s|$)
+(rd|rmdir|del)\s+/s[^;&|\n]*[a-zA-Z]:\\(\s|$|Windows|Users|Program)
+del\s+/[a-z]*q[a-z]*\s+/[a-z]*s[a-z]*\s+"?[a-zA-Z]:[\\/]?"?\s*$
+
+# 磁盘 / 文件系统级破坏
+mkfs(\.|\s)
+\bdd\b[^;&|\n]*of=/dev/(sd|hd|nvme|vd|disk|rdisk|mapper)
+shred\s+[^;&|\n]*/dev/
+blkdiscard
+wipefs\s+[^;&|\n]*/dev/
+\bdiskpart\b[\s\S]*\bclean\b
+\bformat\s+[a-zA-Z]:
+Clear-Disk
+Initialize-Disk
+Remove-Partition
+cipher\s+/w
+
+# 覆写块设备
+>\s*/dev/(sd|hd|nvme|disk)
+
+# fork bomb
+:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:
+
+# 整树权限/属主破坏
+chmod\s+-R\s+0?777\s+/(?:\s|$)
+chown\s+-R\s+\S+\s+/(?:\s|$)

@@ -1,0 +1,4 @@
+gatekeeper/config.json
+gatekeeper/state/
+gatekeeper/state-echo/
+.zcode

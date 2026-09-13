@@ -1,0 +1,26 @@
+{
+  "baseUrl": "YOUR_OPENAI_COMPATIBLE_ENDPOINT",
+  "apiKey": "PENDING",
+  "model": "YOUR_MODEL",
+  "llmTimeoutMs": 12000,
+  "retries": 1,
+  "maxOutputTokens": 2000,
+  "onReviewerError": "deny",
+  "fullAccessGuard": false,
+  "onUncertain": "deny",
+  "allowOutput": "json",
+  "enableAllowlist": true,
+  "enableDangerList": true,
+  "maxInputChars": 6000,
+  "recentPrompts": 5,
+  "recentActions": 10,
+  "daemon": true,
+  "daemonPort": 47811,
+  "extraBody": {},
+  "toolAllowlist": [],
+  "autoMode": {
+    "allow": [],
+    "soft_deny": [],
+    "environment": []
+  }
+}
