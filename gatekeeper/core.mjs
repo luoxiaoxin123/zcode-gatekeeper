@@ -69,6 +69,7 @@ const DEFAULTS = {
   recentActions: 10,         // 提供给审查器的最近工具调用条数（组合风险判定）
   daemon: true,              // 守护进程模式（客户端自动拉起，连不上则内联降级）
   daemonPort: 47811,
+  daemonIdleMs: 1800000,     // daemon 空闲自动退出（ms）：无调用 30 分钟后退出释放内存，下次调用自动拉起；0 = 常驻
   extraBody: {},             // 深合并进 LLM 请求体的自定义字段（如 chat_template_kwargs.enable_thinking）
   toolAllowlist: [],
   autoMode: { allow: [], soft_deny: [], environment: [] },  // 用户自定义规则（非空则整段替换默认）
@@ -90,6 +91,9 @@ export function loadAll() {
   if (raw.onUncertain == null && raw.escalateToPrompt === true) config.onUncertain = 'prompt';
   if (process.env.GATEKEEPER_ON_UNCERTAIN) {
     config.onUncertain = String(process.env.GATEKEEPER_ON_UNCERTAIN).toLowerCase();
+  }
+  if (process.env.GATEKEEPER_DAEMON_IDLE_MS != null) {
+    config.daemonIdleMs = parseInt(process.env.GATEKEEPER_DAEMON_IDLE_MS, 10) || 0;
   }
   // 超时预算钳制：LLM 最坏耗时（超时×(重试+1)）+ 5s 余量不得超过 35s，
   // 否则内联降级会撞上 hook 超时（PreToolUse 50s / PermissionRequest 45s）被掐成无决策。

@@ -67,12 +67,22 @@ async function handleHook(req) {
 
 // allowHalfOpen: true —— 客户端会半关闭（write+end），hook 判定是异步的（LLM 数秒），
 // 默认模式下 Node 会在收到 FIN 时自动关闭本端，响应就写进了一条已死的连接。
+// 空闲自动退出：ZCode 关闭/无调用一段时间后自动退出释放内存（~55MB），下次 hook 调用会自动重新拉起
+let idleTimer = null;
+function armIdle() {
+  const ms = all.config.daemonIdleMs | 0;
+  if (idleTimer) clearTimeout(idleTimer);
+  if (ms <= 0) return;
+  idleTimer = setTimeout(() => { log('idle ' + Math.round(ms / 1000) + 's — exit to free memory'); process.exit(0); }, ms);
+}
+
 const server = net.createServer({ allowHalfOpen: true }, (socket) => {
   let buf = '';
   socket.setEncoding('utf8');
   socket.setTimeout(42_000, () => socket.destroy());          // 兜底：不允许超过 hook 超时
 
   const dispatch = async (line) => {
+    armIdle(); // 任何请求（含 ping）都重置空闲计时
     // 协议异常/未知 op 一律返回 {ok:false}（无 exitCode 字段）——客户端据此降级内联做完整审查，
     // 绝不能返回 {exitCode:0}（会被当作"明确放行"决策，形成 fail-open）。
     let res = { ok: false, error: 'unknown op' };
@@ -118,7 +128,8 @@ server.on('error', async (e) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  log('daemon listening on 127.0.0.1:' + PORT + ' (model=' + all.config.model + ', guard=' + all.config.fullAccessGuard + ')');
+  log('daemon listening on 127.0.0.1:' + PORT + ' (model=' + all.config.model + ', guard=' + all.config.fullAccessGuard + ', idleExit=' + Math.round((all.config.daemonIdleMs|0)/1000) + 's)');
+  armIdle(); // 启动即计时：无任何调用则按时退出
   // 预热：开一条到审查端点的 TLS 连接，让第一次真实审查免握手
   setTimeout(async () => {
     try {

@@ -152,7 +152,7 @@ node ~/.zcode/gatekeeper/gatekeeper.mjs approve --last   # 或直接批准最近
 
 ## 守护进程（daemon）
 
-客户端每次调用先探测 `127.0.0.1:47811`（无副作用 ping），daemon 不在就自动拉起。收益：到审查端点的 TLS 连接常驻、决策缓存与任务状态驻内存、同请求并发去重、配置热重载（客户端每次请求带配置文件 mtime 签名，变了即重载）。
+客户端每次调用先探测 `127.0.0.1:47811`（无副作用 ping），daemon 不在就自动拉起；**无调用 30 分钟后自动退出释放内存**（`daemonIdleMs` 可调，0 = 常驻），下次调用自动重新拉起。收益：到审查端点的 TLS 连接常驻、决策缓存与任务状态驻内存、同请求并发去重、配置热重载（客户端每次请求带配置文件 mtime 签名，变了即重载）。
 
 ```bash
 node gatekeeper/gatekeeper.mjs shutdown-daemon   # 停止（下次调用自动重新拉起）
