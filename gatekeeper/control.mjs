@@ -65,15 +65,23 @@ function pingDaemon(port, timeoutMs = 400) {
 
 // ---------------------------------------------------------------- 安装 ------
 async function cmdInstall() {
+  const sameDir = SCRIPT_DIR.toLowerCase() === TARGET_DIR.toLowerCase();
+  if (sameDir) out('提示：当前就在安装目录内运行，文件视为最新，仅重新注册 hooks。');
   mkdirSync(TARGET_DIR, { recursive: true });
   let copied = 0;
   for (const f of INSTALL_FILES) {
     const src = path.join(SCRIPT_DIR, f);
     if (!existsSync(src)) continue;
-    // 升级安装时保留用户已调好的配置，只在首次安装时带入
-    if (f === 'config.json' && existsSync(path.join(TARGET_DIR, f))) continue;
-    cpSync(src, path.join(TARGET_DIR, f));
-    copied++;
+    const dest = path.join(TARGET_DIR, f);
+    // 升级安装时保留用户已调好的配置，只在首次安装时带入；从安装目录运行时跳过自身复制
+    if (f === 'config.json' && existsSync(dest)) continue;
+    if (path.resolve(src).toLowerCase() === path.resolve(dest).toLowerCase()) continue;
+    try {
+      cpSync(src, dest);
+      copied++;
+    } catch (e) {
+      out(`⚠ 复制失败（文件被占用？关掉相关程序后重跑 install）：${f} — ${e?.message || e}`);
+    }
   }
   out(`✓ 已复制 ${copied} 个文件 → ${TARGET_DIR}`);
 
